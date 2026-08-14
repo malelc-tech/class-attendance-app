@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+/* Site-wide background image. To change the image later, this is the
+   only line that needs to be edited — every page uses this same body
+   background automatically. background-attachment is deliberately left
+   as the default (not "fixed") since fixed backgrounds are unreliable
+   on iOS Safari. */
+body {
+  background-image: url("https://i.imgur.com/V83egBH.jpeg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
