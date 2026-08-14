@@ -44,10 +44,9 @@ export default function AdminCoursesPage() {
       .select("id, full_name")
       .eq("role", "teacher")
       .order("full_name");
-    if (data) {
-      setTeachers(data);
-      if (data[0]) setSelectedTeacher(data[0].id);
-    }
+    const teacherRows = (data ?? []) as Teacher[];
+    setTeachers(teacherRows);
+    if (teacherRows[0]) setSelectedTeacher(teacherRows[0].id);
   }
 
   async function loadCourses() {
@@ -55,18 +54,16 @@ export default function AdminCoursesPage() {
       .from("courses")
       .select("id, code, title, teacher_id, users:teacher_id(full_name)")
       .order("code");
-    if (data) {
-      setCourses(
-        data.map((c: any) => ({
-          id: c.id,
-          code: c.code,
-          title: c.title,
-          teacher_id: c.teacher_id,
-          teacher_name: c.users?.full_name,
-        }))
-      );
-      if (data[0]) setEnrollCourseId(data[0].id);
-    }
+    const courseRows = (data ?? []) as any[];
+    const mapped = courseRows.map((c) => ({
+      id: c.id,
+      code: c.code,
+      title: c.title,
+      teacher_id: c.teacher_id,
+      teacher_name: c.users?.full_name,
+    }));
+    setCourses(mapped);
+    if (mapped[0]) setEnrollCourseId(mapped[0].id);
   }
 
   async function handleCreateCourse(e: React.FormEvent) {

@@ -43,7 +43,7 @@ export default function AdminAddUsersPage() {
     (async () => {
       const { data } = await supabase.from("courses").select("id, code, title").order("code");
       if (data) {
-        setCourses(data);
+        setCourses(data as Course[]);
       }
     })();
   }, []);

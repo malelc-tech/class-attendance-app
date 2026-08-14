@@ -36,7 +36,7 @@ export default function AdminDashboardPage() {
       .from("users")
       .select("id, full_name, email, role, device_fingerprint")
       .order("full_name");
-    if (data) setUsers(data);
+    if (data) setUsers(data as UserRow[]);
   }
 
   async function loadAnalytics() {

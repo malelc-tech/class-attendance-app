@@ -26,10 +26,31 @@ export default function TeacherDashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("courses").select("id, code, title");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      // Teachers only see their own courses; admins see everything.
+      // Without this filter, every teacher would see every other
+      // teacher's courses in the dropdown — wrong once there's more
+      // than one lecturer using the app.
+      const query = supabase.from("courses").select("id, code, title");
+      const { data } =
+        profile?.role === "admin"
+          ? await query
+          : await query.eq("teacher_id", user.id);
+
       if (data) {
-        setCourses(data);
-        if (data[0]) setSelectedCourse(data[0].id);
+        const courseRows = data as Course[];
+        setCourses(courseRows);
+        if (courseRows[0]) setSelectedCourse(courseRows[0].id);
       }
     })();
   }, [supabase]);
