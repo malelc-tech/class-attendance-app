@@ -45,9 +45,25 @@ export async function createClient() {
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 export function createServiceRoleClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Temporary diagnostic: tells us in the CloudWatch log exactly which
+  // variable is missing at runtime, and how long the key is if present
+  // (a real service_role JWT is normally 200+ characters — a short or
+  // zero length here means it's present but empty/truncated, which is
+  // different from not being set at all). Never logs the actual value.
+  if (!url || !key) {
+    throw new Error(
+      `Missing Supabase server config — NEXT_PUBLIC_SUPABASE_URL: ${
+        url ? "present" : "MISSING"
+      }, SUPABASE_SERVICE_ROLE_KEY: ${
+        key ? `present (length ${key.length})` : "MISSING"
+      }`
+    );
+  }
+
+  return createSupabaseClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
