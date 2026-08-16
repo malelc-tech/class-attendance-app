@@ -63,7 +63,11 @@ export default function AdminDashboardPage() {
 
   async function changeRole(userId: string, role: UserRow["role"]) {
     setSavingId(userId);
-    await supabase.from("users").update({ role }).eq("id", userId);
+    await fetch("/api/users/set-role", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId, role }),
+    });
     await loadUsers();
     setSavingId(null);
   }
@@ -86,6 +90,12 @@ export default function AdminDashboardPage() {
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-900">Admin dashboard</h1>
           <div className="flex gap-2">
+            <a
+              href="/admin/billing"
+              className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
+            >
+              Billing
+            </a>
             <a
               href="/admin/add-users"
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
