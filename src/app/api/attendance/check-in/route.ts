@@ -128,7 +128,7 @@ export async function POST(req: Request) {
   const { data: klass, error: classError } = await admin
     .from("classes")
     .select(
-      "id, status, latitude, longitude, allowed_radius_meters, qr_secret, late_after_minutes, starts_at, closing_window_started_at"
+      "id, status, latitude, longitude, allowed_radius_meters, qr_secret, late_after_minutes, starts_at, closing_window_started_at, initial_window_ended_at, closing_window_ended_at"
     )
     .eq("id", classId)
     .single();
@@ -213,6 +213,13 @@ export async function POST(req: Request) {
     // in at the start but left before class ended, without any
     // continuous location tracking.
     if (klass.closing_window_started_at) {
+      if (klass.closing_window_ended_at) {
+        return NextResponse.json(
+          { error: "The closing check-in period has ended." },
+          { status: 409 }
+        );
+      }
+
       const { error: closingUpdateError } = await admin
         .from("attendance_logs")
         .update({ closing_scanned_at: new Date().toISOString() })
@@ -238,15 +245,39 @@ export async function POST(req: Request) {
     );
   }
 
+  // A student who hasn't checked in yet normally can't start once the
+  // teacher has ended the initial check-in window — UNLESS the closing
+  // window is currently open. In that case, let them in but mark them
+  // late: they clearly missed the whole first part of class, but showing
+  // up is still better tracked than rejected outright. Since this is
+  // their only scan, it also counts as their closing reconfirmation —
+  // there's no "still here" check needed for someone who just arrived.
+  const isWithinClosingWindow =
+    !!klass.closing_window_started_at && !klass.closing_window_ended_at;
+
+  if (klass.initial_window_ended_at && !isWithinClosingWindow) {
+    return NextResponse.json(
+      { error: "The check-in period for this class has ended." },
+      { status: 409 }
+    );
+  }
+
+  const lateArrivalDuringClosing =
+    !!klass.initial_window_ended_at && isWithinClosingWindow;
+  const finalStatus = lateArrivalDuringClosing ? "late" : status;
+
   const { error: insertError } = await admin.from("attendance_logs").insert({
     class_id: klass.id,
     student_id: user.id,
-    status,
+    status: finalStatus,
     latitude,
     longitude,
     distance_meters: Number(distance.toFixed(2)),
     device_fingerprint: deviceFingerprint,
     qr_token_used: token,
+    closing_scanned_at: lateArrivalDuringClosing
+      ? new Date().toISOString()
+      : null,
   });
 
   if (insertError) {
@@ -274,8 +305,9 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     success: true,
-    status,
+    status: finalStatus,
     distanceMeters: Math.round(distance),
     deviceReuseWarning: (deviceReuseCount ?? 0) > 1,
+    lateArrivalDuringClosing,
   });
 }

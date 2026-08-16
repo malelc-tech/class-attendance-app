@@ -166,6 +166,10 @@ export default function StudentCheckInPage() {
             ? "Already confirmed — you're all set!"
             : "Confirmed — thanks for staying till the end! ✅"
         );
+      } else if (data.lateArrivalDuringClosing) {
+        setMessage(
+          "Checked in — marked as LATE (you missed the first check-in window)."
+        );
       } else {
         setMessage(
           data.status === "late"

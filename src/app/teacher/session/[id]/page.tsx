@@ -191,6 +191,14 @@ export default function TeacherSessionPage() {
     };
   }, [classId, supabase]);
 
+  // The QR should only be shown while a scan is actually meaningful:
+  // during the initial window (before the teacher ends it), or during
+  // an active closing-check-in window. Between those, or once the
+  // session is fully ended, there's nothing for students to scan for.
+  const isScanningActive =
+    !sessionEnded &&
+    (!initialWindowEndedAt || (!!closingWindowStartedAt && !closingWindowEndedAt));
+
   const presentCount = attendance.filter((a) => a.status === "present").length;
   const lateCount = attendance.filter((a) => a.status === "late").length;
   const rejectedCount = attendance.filter((a) => a.status === "rejected").length;
@@ -389,7 +397,16 @@ export default function TeacherSessionPage() {
               <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{loadError}</p>
             )}
             <div className="flex flex-col items-center gap-4">
-              {qrPayload ? (
+              {!isScanningActive ? (
+                <div className="flex h-[252px] w-[252px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 text-center text-sm text-slate-400">
+                  <span className="text-3xl">🚫</span>
+                  <span>
+                    {sessionEnded
+                      ? "Session ended — no QR to scan."
+                      : "Not currently accepting scans."}
+                  </span>
+                </div>
+              ) : qrPayload ? (
                 <div className="rounded-xl border border-slate-200 p-4">
                   <QRCode value={qrPayload} size={220} />
                 </div>
@@ -398,27 +415,32 @@ export default function TeacherSessionPage() {
                   Loading QR…
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <span>Refreshing in</span>
-                <span className="w-6 font-mono font-semibold text-slate-900">
-                  {secondsLeft}
-                </span>
-                <span>s</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full bg-indigo-500 transition-all duration-1000 ease-linear"
-                  style={{ width: `${(secondsLeft / ROTATE_SECONDS) * 100}%` }}
-                />
-              </div>
+              {isScanningActive && (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span>Refreshing in</span>
+                    <span className="w-6 font-mono font-semibold text-slate-900">
+                      {secondsLeft}
+                    </span>
+                    <span>s</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full bg-indigo-500 transition-all duration-1000 ease-linear"
+                      style={{ width: `${(secondsLeft / ROTATE_SECONDS) * 100}%` }}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
 
-              <div className="w-full border-t border-slate-100 pt-4">
-                {initialWindowEndedAt ? (
-                  <p className="text-center text-sm text-slate-500">
-                    🔒 First check-in ended at{" "}
-                    {new Date(initialWindowEndedAt).toLocaleTimeString()}
-                  </p>
-                ) : (
+            <div className="w-full border-t border-slate-100 pt-4">
+              {initialWindowEndedAt ? (
+                <p className="text-center text-sm text-slate-500">
+                  🔒 First check-in ended at{" "}
+                  {new Date(initialWindowEndedAt).toLocaleTimeString()}
+                </p>
+              ) : (
                   <button
                     onClick={endInitialWindow}
                     disabled={startingClosingWindow}
@@ -488,7 +510,6 @@ export default function TeacherSessionPage() {
                   can't be undone.
                 </p>
               </div>
-            </div>
           </section>
 
           {/* Live counters + feed */}
