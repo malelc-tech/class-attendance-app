@@ -117,7 +117,17 @@ export default function TeacherDashboardPage() {
   return (
     <div className="min-h-screen bg-white/80 p-6 backdrop-blur-sm">
       <div className="mx-auto max-w-lg">
-        <h1 className="mb-6 text-2xl font-bold text-slate-900">Start a class session</h1>
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">Start a class session</h1>
+          {selectedCourse && (
+            <a
+              href={`/teacher/reports/${selectedCourse}`}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+            >
+              📊 Attendance report
+            </a>
+          )}
+        </div>
 
         <div className="space-y-4 rounded-2xl bg-white p-6 shadow-sm">
           {error && (

@@ -24,6 +24,7 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -84,12 +85,71 @@ export default function AdminDashboardPage() {
     setSavingId(null);
   }
 
+  async function resetPassword(userId: string, name: string) {
+    const confirmed = window.confirm(`Reset ${name}'s password to a new random one?`);
+    if (!confirmed) return;
+
+    setSavingId(userId);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMessage(data.error ?? "Failed to reset password");
+      } else {
+        setActionMessage(`${name}'s new password: ${data.newPassword} — save this now, it won't be shown again.`);
+      }
+    } catch {
+      setActionMessage("Network error — please try again.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function deleteUser(userId: string, name: string) {
+    const confirmed = window.confirm(
+      `Permanently delete ${name}'s account? This removes their enrollments and attendance history too, and can't be undone.`
+    );
+    if (!confirmed) return;
+
+    setSavingId(userId);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/users/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMessage(data.error ?? "Failed to delete user");
+      } else {
+        setActionMessage(`${name}'s account was deleted.`);
+        await loadUsers();
+      }
+    } catch {
+      setActionMessage("Network error — please try again.");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-white/80 p-6 backdrop-blur-sm">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold text-slate-900">Admin dashboard</h1>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/admin/my-account"
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              My account
+            </a>
             <a
               href="/admin/billing"
               className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
@@ -111,6 +171,12 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
+        {actionMessage && (
+          <p className="mb-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-700">
+            {actionMessage}
+          </p>
+        )}
+
         {analytics && (
           <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
             <Stat label="Students" value={analytics.totalStudents} />
@@ -130,6 +196,7 @@ export default function AdminDashboardPage() {
                 <th className="py-2 font-medium">Email</th>
                 <th className="py-2 font-medium">Role</th>
                 <th className="py-2 font-medium">Device</th>
+                <th className="py-2 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -164,6 +231,24 @@ export default function AdminDashboardPage() {
                     ) : (
                       <span className="text-xs text-slate-400">Not set</span>
                     )}
+                  </td>
+                  <td className="py-2">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => resetPassword(u.id, u.full_name)}
+                        disabled={savingId === u.id}
+                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Reset password
+                      </button>
+                      <button
+                        onClick={() => deleteUser(u.id, u.full_name)}
+                        disabled={savingId === u.id}
+                        className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

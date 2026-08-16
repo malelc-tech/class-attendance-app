@@ -38,7 +38,10 @@ export default function TeacherSessionPage() {
   const [busyStudentId, setBusyStudentId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [closingWindowStartedAt, setClosingWindowStartedAt] = useState<string | null>(null);
+  const [initialWindowEndedAt, setInitialWindowEndedAt] = useState<string | null>(null);
+  const [closingWindowEndedAt, setClosingWindowEndedAt] = useState<string | null>(null);
   const [startingClosingWindow, setStartingClosingWindow] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // --- Fetch the current rotating QR token from the server --------------
@@ -76,17 +79,69 @@ export default function TeacherSessionPage() {
 
   // --- Load class + course + enrolled students + existing attendance ----
   useEffect(() => {
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    // The channel is created and subscribed synchronously, right here,
+    // BEFORE any of the async data-loading below. This guarantees the
+    // cleanup function below always has a real channel to remove — if
+    // channel creation were buried inside the async work, React's dev
+    // mode (which runs effects twice to catch bugs) could leave an
+    // orphaned subscription behind, causing "cannot add postgres_changes
+    // callbacks after subscribe()" errors.
+    const channel = supabase
+      .channel(`attendance-${classId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "attendance_logs",
+          filter: `class_id=eq.${classId}`,
+        },
+        async (payload) => {
+          const row = payload.new as AttendanceRow;
+          const { data: student } = await supabase
+            .from("users")
+            .select("full_name")
+            .eq("id", row.student_id)
+            .single();
+
+          setAttendance((prev) => [
+            { ...row, student_name: student?.full_name },
+            ...prev,
+          ]);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "attendance_logs",
+          filter: `class_id=eq.${classId}`,
+        },
+        (payload) => {
+          // Picks up closing_scanned_at reconfirmations live.
+          const row = payload.new as AttendanceRow;
+          setAttendance((prev) =>
+            prev.map((a) =>
+              a.id === row.id ? { ...a, closing_scanned_at: row.closing_scanned_at } : a
+            )
+          );
+        }
+      )
+      .subscribe();
 
     (async () => {
       const { data: klass } = await supabase
         .from("classes")
-        .select("title, course_id, closing_window_started_at")
+        .select("title, course_id, status, closing_window_started_at, initial_window_ended_at, closing_window_ended_at")
         .eq("id", classId)
         .single();
       if (klass) {
         setClassTitle(klass.title);
         setClosingWindowStartedAt(klass.closing_window_started_at);
+        setInitialWindowEndedAt(klass.initial_window_ended_at);
+        setClosingWindowEndedAt(klass.closing_window_ended_at);
+        setSessionEnded(klass.status === "closed");
       }
 
       if (klass?.course_id) {
@@ -129,54 +184,10 @@ export default function TeacherSessionPage() {
           }))
         );
       }
-
-      channel = supabase
-        .channel(`attendance-${classId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "attendance_logs",
-            filter: `class_id=eq.${classId}`,
-          },
-          async (payload) => {
-            const row = payload.new as AttendanceRow;
-            const { data: student } = await supabase
-              .from("users")
-              .select("full_name")
-              .eq("id", row.student_id)
-              .single();
-
-            setAttendance((prev) => [
-              { ...row, student_name: student?.full_name },
-              ...prev,
-            ]);
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "attendance_logs",
-            filter: `class_id=eq.${classId}`,
-          },
-          (payload) => {
-            // Picks up closing_scanned_at reconfirmations live.
-            const row = payload.new as AttendanceRow;
-            setAttendance((prev) =>
-              prev.map((a) =>
-                a.id === row.id ? { ...a, closing_scanned_at: row.closing_scanned_at } : a
-              )
-            );
-          }
-        )
-        .subscribe();
     })();
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, [classId, supabase]);
 
@@ -226,6 +237,78 @@ export default function TeacherSessionPage() {
       setActionMessage(
         "Closing check-in started — ask students to scan the QR again before class ends."
       );
+    }
+    setStartingClosingWindow(false);
+  }
+
+  async function endInitialWindow() {
+    const confirmed = window.confirm(
+      "End the first check-in window? Students who haven't checked in yet will no longer be able to — you can still mark them present manually if needed."
+    );
+    if (!confirmed) return;
+
+    setStartingClosingWindow(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("classes")
+      .update({ initial_window_ended_at: now })
+      .eq("id", classId);
+
+    if (error) {
+      setActionMessage(error.message);
+    } else {
+      setInitialWindowEndedAt(now);
+      setActionMessage("First check-in window ended.");
+    }
+    setStartingClosingWindow(false);
+  }
+
+  async function endClosingWindowFn() {
+    const confirmed = window.confirm(
+      "End the closing check-in window? Students will no longer be able to submit the second (still-here) scan."
+    );
+    if (!confirmed) return;
+
+    setStartingClosingWindow(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("classes")
+      .update({ closing_window_ended_at: now })
+      .eq("id", classId);
+
+    if (error) {
+      setActionMessage(error.message);
+    } else {
+      setClosingWindowEndedAt(now);
+      setActionMessage("Closing check-in window ended.");
+    }
+    setStartingClosingWindow(false);
+  }
+
+  async function endSession() {
+    const confirmed = window.confirm(
+      "End this class session completely? This closes it permanently — no more scans of any kind will be accepted, and this can't be undone."
+    );
+    if (!confirmed) return;
+
+    setStartingClosingWindow(true);
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from("classes")
+      .update({
+        status: "closed",
+        initial_window_ended_at: initialWindowEndedAt ?? now,
+        closing_window_ended_at: closingWindowEndedAt ?? now,
+      })
+      .eq("id", classId);
+
+    if (error) {
+      setActionMessage(error.message);
+    } else {
+      setInitialWindowEndedAt((prev) => prev ?? now);
+      setClosingWindowEndedAt((prev) => prev ?? now);
+      setSessionEnded(true);
+      setActionMessage("Class session ended.");
     }
     setStartingClosingWindow(false);
   }
@@ -330,12 +413,47 @@ export default function TeacherSessionPage() {
               </div>
 
               <div className="w-full border-t border-slate-100 pt-4">
-                {closingWindowStartedAt ? (
-                  <p className="text-center text-sm text-emerald-600">
-                    ✅ Closing check-in active since{" "}
-                    {new Date(closingWindowStartedAt).toLocaleTimeString()} — ask
-                    students to scan once more before class ends.
+                {initialWindowEndedAt ? (
+                  <p className="text-center text-sm text-slate-500">
+                    🔒 First check-in ended at{" "}
+                    {new Date(initialWindowEndedAt).toLocaleTimeString()}
                   </p>
+                ) : (
+                  <button
+                    onClick={endInitialWindow}
+                    disabled={startingClosingWindow}
+                    className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    🔒 End first check-in
+                  </button>
+                )}
+                <p className="mt-1 text-center text-xs text-slate-400">
+                  Stops new students from checking in for the first time.
+                  Students already checked in are unaffected.
+                </p>
+              </div>
+
+              <div className="w-full border-t border-slate-100 pt-4">
+                {closingWindowEndedAt ? (
+                  <p className="text-center text-sm text-slate-500">
+                    🔒 Closing check-in ended at{" "}
+                    {new Date(closingWindowEndedAt).toLocaleTimeString()}
+                  </p>
+                ) : closingWindowStartedAt ? (
+                  <>
+                    <p className="mb-2 text-center text-sm text-emerald-600">
+                      ✅ Closing check-in active since{" "}
+                      {new Date(closingWindowStartedAt).toLocaleTimeString()} —
+                      ask students to scan once more before class ends.
+                    </p>
+                    <button
+                      onClick={endClosingWindowFn}
+                      disabled={startingClosingWindow}
+                      className="w-full rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      🔒 End closing check-in
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={startClosingWindow}
@@ -348,6 +466,26 @@ export default function TeacherSessionPage() {
                 <p className="mt-1 text-center text-xs text-slate-400">
                   Use this near the end of class — a second scan confirms students
                   are still present, without any background location tracking.
+                </p>
+              </div>
+
+              <div className="w-full border-t border-slate-100 pt-4">
+                {sessionEnded ? (
+                  <p className="text-center text-sm font-medium text-red-600">
+                    🔴 This session has ended.
+                  </p>
+                ) : (
+                  <button
+                    onClick={endSession}
+                    disabled={startingClosingWindow}
+                    className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  >
+                    🔴 End class session
+                  </button>
+                )}
+                <p className="mt-1 text-center text-xs text-slate-400">
+                  Permanently closes this session — no more scans of any kind,
+                  can't be undone.
                 </p>
               </div>
             </div>
