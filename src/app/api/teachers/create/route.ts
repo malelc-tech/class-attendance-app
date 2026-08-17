@@ -33,14 +33,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("users")
     .select("role")
     .eq("id", user.id)
     .single();
 
+  // Temporary diagnostic: shows exactly why the admin check is failing
+  // instead of a generic "Forbidden" — either no profile row was found
+  // (or blocked by RLS), or it was found but the role isn't 'admin'.
   if (profile?.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    return NextResponse.json(
+      {
+        error: `Forbidden — profile: ${
+          profile ? `found, role="${profile.role}"` : "NOT FOUND"
+        }${profileError ? `, db error: ${profileError.message}` : ""}, your user id: ${user.id}`,
+      },
+      { status: 403 }
+    );
   }
 
   const admin = createServiceRoleClient();
@@ -51,6 +61,7 @@ export async function POST(req: Request) {
     password,
     email_confirm: true,
     user_metadata: { full_name: fullName, role: "teacher" },
+    app_metadata: { role: "teacher" },
   });
 
   if (createError) {
