@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { getOrCreateDeviceToken } from "@/lib/utils/device-session";
+import LogoutButton from "@/components/LogoutButton";
 
 type ScanState =
   | "not_started"
@@ -21,12 +22,6 @@ interface QrPayload {
 const SCANNER_ELEMENT_ID = "qr-reader";
 
 export default function StudentCheckInPage() {
-  // Camera does NOT start automatically. iOS Safari (and some other
-  // mobile browsers) silently block getUserMedia() calls that aren't
-  // triggered by a direct user tap/click — no permission prompt even
-  // appears, it just fails. Waiting for an explicit "Start Camera"
-  // button press guarantees the browser treats it as a real user
-  // gesture, so the permission prompt reliably shows up.
   const [state, setState] = useState<ScanState>("not_started");
   const [message, setMessage] = useState<string>(
     "Tap the button below to start scanning."
@@ -50,7 +45,7 @@ export default function StudentCheckInPage() {
       scannerRef.current = scanner;
 
       await scanner.start(
-        { facingMode: "environment" }, // rear camera on phones
+        { facingMode: "environment" },
         { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => handleScan(decodedText),
         () => {
@@ -81,8 +76,6 @@ export default function StudentCheckInPage() {
   }
 
   async function handleScan(decodedText: string) {
-    // Ensure we only process the first successful scan of a session
-    // (the camera keeps firing frames while we process this one).
     if (hasHandledScan.current) return;
     hasHandledScan.current = true;
 
@@ -191,16 +184,13 @@ export default function StudentCheckInPage() {
   return (
     <div className="min-h-screen bg-white/80 p-6 backdrop-blur-sm">
       <div className="mx-auto max-w-md">
-        <h1 className="mb-1 text-2xl font-bold text-slate-900">Check In</h1>
+        <div className="mb-1 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">Check In</h1>
+          <LogoutButton />
+        </div>
         <p className="mb-6 text-slate-500">Scan your teacher's QR code to mark attendance.</p>
 
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          {/* This div must always exist in the DOM, not be conditionally
-              mounted — Html5Qrcode's constructor looks up this element by
-              ID synchronously, before React has a chance to re-render
-              after setState("starting_camera"). Conditionally rendering it
-              caused "could not access camera" on every attempt, regardless
-              of actual permission state. We hide it with CSS instead. */}
           <div
             id={SCANNER_ELEMENT_ID}
             className={
