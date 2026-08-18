@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import QRCode from "react-qr-code";
 import { createClient } from "@/lib/supabase/client";
 import { ROTATE_SECONDS } from "@/lib/utils/qr-token";
+ import LogoutButton from "@/components/LogoutButton";
 
 interface AttendanceRow {
   id: string;
@@ -378,10 +379,10 @@ export default function TeacherSessionPage() {
   return (
     <div className="min-h-screen bg-white/80 p-6 backdrop-blur-sm">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">{classTitle || "Class Session"}</h1>
-          <p className="text-slate-500">Live session — QR refreshes every {ROTATE_SECONDS}s</p>
-        </header>
+      <header className="mb-6 flex items-center justify-between"> <div>
+        <h1 className="text-2xl font-bold text-slate-900">{classTitle || "Class Session"}</h1> 
+        <p className="text-slate-500">Live session — QR refreshes every {ROTATE_SECONDS}s</p>
+      </div> <LogoutButton /> </header>
 
         {actionMessage && (
           <p className="mb-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-700">
