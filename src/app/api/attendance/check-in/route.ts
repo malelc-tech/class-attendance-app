@@ -128,7 +128,7 @@ export async function POST(req: Request) {
   const { data: klass, error: classError } = await admin
     .from("classes")
     .select(
-      "id, status, latitude, longitude, allowed_radius_meters, qr_secret, late_after_minutes, starts_at, closing_window_started_at, initial_window_ended_at, closing_window_ended_at"
+      "id, course_id, status, latitude, longitude, allowed_radius_meters, qr_secret, late_after_minutes, starts_at, closing_window_started_at, initial_window_ended_at, closing_window_ended_at"
     )
     .eq("id", classId)
     .single();
@@ -143,6 +143,21 @@ export async function POST(req: Request) {
       { status: 409 }
     );
   }
+
+  // --- 2b. Confirm the student is actually enrolled in this course -------
+const { data: enrollment } = await admin
+  .from("course_enrollments")
+  .select("course_id")
+  .eq("course_id", klass.course_id)
+  .eq("student_id", user.id)
+  .maybeSingle();
+
+if (!enrollment) {
+  return NextResponse.json(
+    { error: "You are not enrolled in this course." },
+    { status: 403 }
+  );
+}
 
   // --- 3. Verify the rotating QR token ---------------------------------
   const tokenValid = verifyToken(klass.id, klass.qr_secret, token);
