@@ -1,248 +1,92 @@
 "use client";
-
-import { useEffect, useRef, useState } from "react";
-import { Html5Qrcode } from "html5-qrcode";
-import { getOrCreateDeviceToken } from "@/lib/utils/device-session";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import LogoutButton from "@/components/LogoutButton";
 
-type ScanState =
-  | "not_started"
-  | "starting_camera"
-  | "scanning"
-  | "locating"
-  | "submitting"
-  | "success"
-  | "error";
-
-interface QrPayload {
-  classId: string;
-  token: string;
+interface HistoryRow {
+  id: string;
+  status: "present" | "late" | "rejected";
+  scanned_at: string;
+  class_title: string;
+  course_code: string;
 }
-
-const SCANNER_ELEMENT_ID = "qr-reader";
-
-export default function StudentCheckInPage() {
-  const [state, setState] = useState<ScanState>("not_started");
-  const [message, setMessage] = useState<string>(
-    "Tap the button below to start scanning."
-  );
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const hasHandledScan = useRef(false);
-
+export default function StudentHistoryPage() {
+  const supabase = createClient();
+  const [rows, setRows] = useState<HistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    return () => {
-      stopScanner();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function startScanner() {
-    setState("starting_camera");
-    hasHandledScan.current = false;
-
-    try {
-      const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
-      scannerRef.current = scanner;
-
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => handleScan(decodedText),
-        () => {
-          /* per-frame "no QR found" callback — safe to ignore */
-        }
-      );
-
-      setState("scanning");
-      setMessage("Camera active — align the QR code inside the box.");
-    } catch (err) {
-      setState("error");
-      setMessage(
-        "Could not access the camera. On iPhone, check Settings → Safari → Camera is set to Allow, or tap the \"aA\" icon in the address bar → Website Settings → Camera → Allow, then try again."
-      );
-    }
-  }
-
-  async function stopScanner() {
-    const scanner = scannerRef.current;
-    if (scanner) {
-      try {
-        await scanner.stop();
-        await scanner.clear();
-      } catch {
-        // scanner may already be stopped — ignore
-      }
-    }
-  }
-
-  async function handleScan(decodedText: string) {
-    if (hasHandledScan.current) return;
-    hasHandledScan.current = true;
-
-    await stopScanner();
-
-    let payload: QrPayload;
-    try {
-      payload = JSON.parse(decodedText);
-      if (!payload.classId || !payload.token) throw new Error("bad payload");
-    } catch {
-      setState("error");
-      setMessage("That QR code doesn't look like a valid check-in code.");
-      return;
-    }
-
-    await verifyLocationAndSubmit(payload);
-  }
-
-  async function verifyLocationAndSubmit(payload: QrPayload) {
-    setState("locating");
-    setMessage("Confirming your location…");
-
-    if (!("geolocation" in navigator)) {
-      setState("error");
-      setMessage("Your browser doesn't support location services.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        await submitCheckIn(payload, latitude, longitude);
-      },
-      (geoError) => {
-        setState("error");
-        setMessage(
-          geoError.code === geoError.PERMISSION_DENIED
-            ? "Location permission was denied. Enable it in your browser settings to check in."
-            : "Couldn't determine your location. Please try again."
-        );
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  }
-
-  async function submitCheckIn(
-    payload: QrPayload,
-    latitude: number,
-    longitude: number
-  ) {
-    setState("submitting");
-    setMessage("Submitting your check-in…");
-
-    const deviceFingerprint = getOrCreateDeviceToken();
-
-    try {
-      const res = await fetch("/api/attendance/check-in", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          classId: payload.classId,
-          token: payload.token,
-          latitude,
-          longitude,
-          deviceFingerprint,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setState("error");
-        setMessage(data.error ?? "Check-in failed. Please try again.");
+    (async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
         return;
       }
-
-      setState("success");
-      if (data.closingConfirmed) {
-        setMessage(
-          data.alreadyClosingConfirmed
-            ? "Already confirmed — you're all set!"
-            : "Confirmed — thanks for staying till the end! ✅"
-        );
-      } else if (data.lateArrivalDuringClosing) {
-        setMessage(
-          "Checked in — marked as LATE (you missed the first check-in window)."
-        );
-      } else {
-        setMessage(
-          data.status === "late"
-            ? "Checked in — marked as LATE."
-            : "Checked in — you're marked PRESENT!"
+      const { data } = await supabase
+        .from("attendance_logs")
+        .select(
+          "id, status, scanned_at, classes:class_id(title, courses:course_id(code))"
+        )
+        .eq("student_id", user.id)
+        .order("scanned_at", { ascending: false });
+      if (data) {
+        setRows(
+          data.map((r: any) => ({
+            id: r.id,
+            status: r.status,
+            scanned_at: r.scanned_at,
+            class_title: r.classes?.title ?? "Unknown session",
+            course_code: r.classes?.courses?.code ?? "",
+          }))
         );
       }
-    } catch {
-      setState("error");
-      setMessage("Network error while submitting. Please try again.");
-    }
-  }
-
-  function handleRetry() {
-    setState("not_started");
-    setMessage("Tap the button below to start scanning.");
-  }
-
+      setLoading(false);
+    })();
+  }, [supabase]);
   return (
     <div className="min-h-screen bg-white/80 p-6 backdrop-blur-sm">
-      <div className="mx-auto max-w-md">
-        <div className="mb-1 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-slate-900">Check In</h1>
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl font-bold text-slate-900">My attendance</h1>
           <LogoutButton />
         </div>
-        <p className="mb-6 text-slate-500">Scan your teacher's QR code to mark attendance.</p>
-
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <div
-            id={SCANNER_ELEMENT_ID}
-            className={
-              state === "starting_camera" || state === "scanning" ? "w-full" : "hidden"
-            }
-          />
-
-          {state !== "starting_camera" && state !== "scanning" && (
-            <div className="flex flex-col items-center gap-4 p-8 text-center">
-              <StatusIcon state={state} />
-              <p
-                className={
-                  state === "success"
-                    ? "font-medium text-emerald-600"
-                    : state === "error"
-                    ? "font-medium text-red-600"
-                    : "text-slate-600"
-                }
-              >
-                {message}
-              </p>
-              {state === "not_started" && (
-                <button
-                  onClick={startScanner}
-                  className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-medium text-white hover:bg-indigo-500"
-                >
-                  📷 Start Camera
-                </button>
-              )}
-              {(state === "error" || state === "success") && (
-                <button
-                  onClick={handleRetry}
-                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-                >
-                  {state === "success" ? "Scan another" : "Try again"}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {(state === "starting_camera" || state === "scanning") && (
-          <p className="mt-3 text-center text-sm text-slate-500">{message}</p>
+        {loading && <p className="text-slate-500">Loading…</p>}
+        {!loading && rows.length === 0 && (
+          <p className="text-slate-500">No attendance records yet.</p>
         )}
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm"
+            >
+              <div>
+                <p className="font-medium text-slate-800">{r.class_title}</p>
+                <p className="text-xs text-slate-400">{r.course_code}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={r.status} />
+                <span className="text-xs text-slate-400">
+                  {new Date(r.scanned_at).toLocaleString()}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
-
-function StatusIcon({ state }: { state: ScanState }) {
-  if (state === "success") return <div className="text-5xl">✅</div>;
-  if (state === "error") return <div className="text-5xl">⚠️</div>;
-  if (state === "not_started") return <div className="text-5xl">📱</div>;
-  return <div className="text-5xl animate-pulse">📍</div>;
+function StatusBadge({ status }: { status: HistoryRow["status"] }) {
+  const styles: Record<HistoryRow["status"], string> = {
+    present: "bg-emerald-100 text-emerald-700",
+    late: "bg-amber-100 text-amber-700",
+    rejected: "bg-red-100 text-red-700",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
+      {status}
+    </span>
+  );
 }
