@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import LogoutButton from "@/components/LogoutButton";
 
 interface UserRow {
   id: string;
@@ -188,8 +189,10 @@ export default function AdminDashboardPage() {
         )}
 
         <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold text-slate-800">Manage users</h2>
-          <table className="w-full text-left text-sm">
+<div className="mb-6 flex items-center justify-between">
+  <h1 className="text-2xl font-bold text-slate-900">Manage courses</h1>
+  <LogoutButton />
+</div>          <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-400">
                 <th className="py-2 font-medium">Name</th>
