@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import * as XLSX from "xlsx";
 
 interface Teacher {
   id: string;
@@ -32,6 +33,7 @@ export default function AdminCoursesPage() {
   const [studentIdsText, setStudentIdsText] = useState("");
   const [enrolling, setEnrolling] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
   const [courseActionMessage, setCourseActionMessage] = useState<string | null>(null);
@@ -100,7 +102,7 @@ export default function AdminCoursesPage() {
     const typed = window.prompt(
       `This will permanently delete "${course.code} — ${course.title}". This cannot be undone.\n\nType the course code (${course.code}) exactly to confirm:`
     );
-    if (typed === null) return; // cancelled
+    if (typed === null) return;
     if (typed.trim() !== course.code) {
       setCourseActionMessage("Course code didn't match — deletion cancelled.");
       return;
@@ -122,6 +124,64 @@ export default function AdminCoursesPage() {
     } finally {
       setDeletingCourseId(null);
     }
+  }
+
+  // Reads an .xlsx file, finds a column that looks like a student ID
+  // column (header containing both "student" and "id", e.g. "Student ID"),
+  // and appends the extracted IDs into the existing textarea so the admin
+  // can still review/edit before enrolling. Falls back to the first
+  // column if no matching header is found.
+  function handleStudentFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileError(null);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = event.target?.result;
+        const workbook = XLSX.read(data, { type: "binary" });
+        const firstSheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[firstSheetName];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+        if (!rows || rows.length === 0) {
+          setFileError("The file appears to be empty.");
+          return;
+        }
+
+        const headerRow = (rows[0] ?? []).map((h) => String(h ?? "").toLowerCase());
+        let idColumnIndex = headerRow.findIndex(
+          (h) => h.includes("student") && h.includes("id")
+        );
+        let dataRows = rows;
+
+        if (idColumnIndex === -1) {
+          idColumnIndex = 0; // no matching header — assume first column, no header row
+        } else {
+          dataRows = rows.slice(1); // skip the header row
+        }
+
+        const ids = dataRows
+          .map((row) => String(row[idColumnIndex] ?? "").trim())
+          .filter(Boolean);
+
+        if (ids.length === 0) {
+          setFileError("No student IDs found in that file.");
+          return;
+        }
+
+        setStudentIdsText((prev) =>
+          prev ? prev + "\n" + ids.join("\n") : ids.join("\n")
+        );
+      } catch {
+        setFileError("Couldn't read that file — make sure it's a valid .xlsx file.");
+      }
+    };
+    reader.onerror = () => setFileError("Failed to read the file.");
+    reader.readAsBinaryString(file);
+
+    e.target.value = ""; // allow re-uploading the same file later
   }
 
   async function handleBulkEnroll(e: React.FormEvent) {
@@ -278,9 +338,9 @@ export default function AdminCoursesPage() {
             Enroll students into a course
           </h2>
           <p className="mb-4 text-sm text-slate-500">
-            Paste student IDs, one per line (e.g. BC/ICT/22/013). Students must
-            already have an account — create them first via the bulk-import
-            script or Supabase.
+            Paste student IDs, one per line, or upload an Excel file below.
+            Students must already have an account — create them first via the
+            bulk-import script or Supabase.
           </p>
           <form onSubmit={handleBulkEnroll} className="space-y-4">
             {enrollMessage && (
@@ -304,6 +364,27 @@ export default function AdminCoursesPage() {
                 ))}
               </select>
             </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">
+                Upload an Excel file (.xlsx)
+              </label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleStudentFileUpload}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Looks for a column header containing "Student ID" (or uses the
+                first column if none found). IDs are added below for you to
+                review before enrolling.
+              </p>
+              {fileError && (
+                <p className="mt-1 text-xs text-red-500">{fileError}</p>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 Student IDs (one per line)
