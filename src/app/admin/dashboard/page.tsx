@@ -74,6 +74,11 @@ export default function AdminDashboardPage() {
     setSavingId(null);
   }
 
+  // Routed through the server (service-role) endpoint instead of writing
+  // directly from the browser client. A direct browser write silently
+  // updates zero rows if RLS blocks it — no error is thrown — so it can
+  // look successful in the UI while nothing actually changed. The server
+  // route performs its own permission check and reports failures clearly.
   async function resetDevice(userId: string, name: string) {
     const confirmed = window.confirm(
       `Reset ${name}'s registered device? They'll be able to check in from a new phone next time.`
@@ -81,9 +86,25 @@ export default function AdminDashboardPage() {
     if (!confirmed) return;
 
     setSavingId(userId);
-    await supabase.from("users").update({ device_fingerprint: null }).eq("id", userId);
-    await loadUsers();
-    setSavingId(null);
+    setActionMessage(null);
+    try {
+      const res = await fetch("/api/students/reset-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionMessage(data.error ?? "Failed to reset device");
+      } else {
+        setActionMessage(`${data.studentName ?? name}'s device was reset.`);
+        await loadUsers();
+      }
+    } catch {
+      setActionMessage("Network error — please try again.");
+    } finally {
+      setSavingId(null);
+    }
   }
 
   async function resetPassword(userId: string, name: string) {
@@ -144,31 +165,32 @@ export default function AdminDashboardPage() {
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold text-slate-900">Admin dashboard</h1>
-          <div className="flex flex-wrap gap-2">
-            <a
+          <div className="flex flex-wrap items-center gap-2">
+            
               href="/admin/my-account"
               className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               My account
             </a>
-            <a
+            
               href="/admin/billing"
               className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
             >
               Billing
             </a>
-            <a
+            
               href="/admin/add-users"
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
             >
               Add lecturers & students
             </a>
-            <a
+            
               href="/admin/courses"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
             >
               Manage courses
             </a>
+            <LogoutButton />
           </div>
         </div>
 
@@ -189,10 +211,7 @@ export default function AdminDashboardPage() {
         )}
 
         <div className="rounded-2xl bg-white p-6 shadow-sm">
-<div className="mb-6 flex items-center justify-between">
-  <h1 className="text-2xl font-bold text-slate-900">Manage courses</h1>
-  <LogoutButton />
-</div>          <table className="w-full text-left text-sm">
+          <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-400">
                 <th className="py-2 font-medium">Name</th>
