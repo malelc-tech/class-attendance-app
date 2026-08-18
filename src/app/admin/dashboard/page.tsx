@@ -74,11 +74,6 @@ export default function AdminDashboardPage() {
     setSavingId(null);
   }
 
-  // Routed through the server (service-role) endpoint instead of writing
-  // directly from the browser client. A direct browser write silently
-  // updates zero rows if RLS blocks it — no error is thrown — so it can
-  // look successful in the UI while nothing actually changed. The server
-  // route performs its own permission check and reports failures clearly.
   async function resetDevice(userId: string, name: string) {
     const confirmed = window.confirm(
       `Reset ${name}'s registered device? They'll be able to check in from a new phone next time.`
