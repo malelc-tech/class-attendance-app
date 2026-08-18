@@ -33,6 +33,9 @@ export default function AdminCoursesPage() {
   const [enrolling, setEnrolling] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<string | null>(null);
 
+  const [deletingCourseId, setDeletingCourseId] = useState<string | null>(null);
+  const [courseActionMessage, setCourseActionMessage] = useState<string | null>(null);
+
   useEffect(() => {
     loadTeachers();
     loadCourses();
@@ -90,6 +93,34 @@ export default function AdminCoursesPage() {
       setCreateMessage("Network error — please try again.");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleDeleteCourse(course: Course) {
+    const typed = window.prompt(
+      `This will permanently delete "${course.code} — ${course.title}". This cannot be undone.\n\nType the course code (${course.code}) exactly to confirm:`
+    );
+    if (typed === null) return; // cancelled
+    if (typed.trim() !== course.code) {
+      setCourseActionMessage("Course code didn't match — deletion cancelled.");
+      return;
+    }
+
+    setDeletingCourseId(course.id);
+    setCourseActionMessage(null);
+    try {
+      const res = await fetch(`/api/courses/${course.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setCourseActionMessage(data.error ?? "Failed to delete course");
+      } else {
+        setCourseActionMessage(`Deleted ${course.code}.`);
+        await loadCourses();
+      }
+    } catch {
+      setCourseActionMessage("Network error — please try again.");
+    } finally {
+      setDeletingCourseId(null);
     }
   }
 
@@ -202,6 +233,11 @@ export default function AdminCoursesPage() {
         {/* Existing courses */}
         <section className="mb-6 rounded-2xl bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-slate-800">Existing courses</h2>
+          {courseActionMessage && (
+            <p className="mb-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-700">
+              {courseActionMessage}
+            </p>
+          )}
           {courses.length === 0 ? (
             <p className="text-sm text-slate-400">No courses yet.</p>
           ) : (
@@ -211,6 +247,7 @@ export default function AdminCoursesPage() {
                   <th className="py-2 font-medium">Code</th>
                   <th className="py-2 font-medium">Title</th>
                   <th className="py-2 font-medium">Lecturer</th>
+                  <th className="py-2 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -219,6 +256,15 @@ export default function AdminCoursesPage() {
                     <td className="py-2 text-slate-800">{c.code}</td>
                     <td className="py-2 text-slate-600">{c.title}</td>
                     <td className="py-2 text-slate-600">{c.teacher_name ?? "—"}</td>
+                    <td className="py-2 text-right">
+                      <button
+                        onClick={() => handleDeleteCourse(c)}
+                        disabled={deletingCourseId === c.id}
+                        className="text-xs text-red-500 underline hover:text-red-700 disabled:opacity-50"
+                      >
+                        {deletingCourseId === c.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
