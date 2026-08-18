@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -161,30 +162,10 @@ export default function AdminDashboardPage() {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-bold text-slate-900">Admin dashboard</h1>
           <div className="flex flex-wrap items-center gap-2">
-            
-              href="/admin/my-account"
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              My account
-            </a>
-            
-              href="/admin/billing"
-              className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
-            >
-              Billing
-            </a>
-            
-              href="/admin/add-users"
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-            >
-              Add lecturers & students
-            </a>
-            
-              href="/admin/courses"
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Manage courses
-            </a>
+            <Link href="/admin/my-account" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">My account</Link>
+            <Link href="/admin/billing" className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500">Billing</Link>
+            <Link href="/admin/add-users" className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">Add lecturers & students</Link>
+            <Link href="/admin/courses" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Manage courses</Link>
             <LogoutButton />
           </div>
         </div>
