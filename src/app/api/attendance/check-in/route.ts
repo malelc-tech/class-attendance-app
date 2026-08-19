@@ -179,7 +179,7 @@ if (!enrollment) {
     klass.longitude
   );
 
-  if (distance > klass.allowed_radius_meters) {
+  if (Math.round(distance) > klass.allowed_radius_meters){
     // Still log the attempt as "rejected" for the teacher's visibility
     // into possible proxy attempts, rather than silently discarding it.
     await admin.from("attendance_logs").upsert(
